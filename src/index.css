@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Cores da AkosMed */
+  --akos-green: #2D7D5F;
+  --akos-green-light: #3A9B73;
+  --akos-green-dark: #1F5A43;
+}
+
+@layer base {
+  * {
+  
+  }
+  body {
+
+  }
+}
+
+@layer utilities {
+  .text-akos-green {
+    color: #2D7D5F;
+  }
+  
+  .bg-akos-green {
+    background-color: #2D7D5F;
+  }
+  
+  .border-akos-green {
+    border-color: #2D7D5F;
+  }
+  
+  .hover\:bg-akos-green\/10:hover {
+    background-color: rgba(45, 125, 95, 0.1);
+  }
+  
+  .hover\:text-akos-green:hover {
+    color: #2D7D5F;
+  }
+}
+
