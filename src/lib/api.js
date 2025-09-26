@@ -1,5 +1,5 @@
 // Cliente da API para comunicação com o backend
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://opme-control-backend-fixed-v17-production.up.railway.app/api';
+const API_BASE_URL = 'https://opme-control-backend-fixed-v17-production.up.railway.app/api';
 
 class ApiClient {
   constructor() {
