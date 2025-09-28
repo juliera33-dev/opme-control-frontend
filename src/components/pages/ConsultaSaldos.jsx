@@ -14,7 +14,6 @@ import {
 import { 
   Search, 
   Package, 
-  Users,
   AlertTriangle,
   ChevronLeft,
   ChevronRight
@@ -29,14 +28,17 @@ import {
 } from '@/lib/utils'
 
 export default function ConsultaSaldos() {
-  const [saldos, setSaldos] = useState([])
-  const [loading, setLoading] = useState(false)
+  // CORREÇÃO: Inicialize 'saldos' como null para diferenciar do estado "lista vazia"
+  const [saldos, setSaldos] = useState(null)
+  const [loading, setLoading] = useState(true) // Inicia como true para o carregamento inicial
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useState({
     cliente_cnpj: '',
     cliente_nome: '',
     codigo_produto: ''
   })
+  
+  // CORREÇÃO: Inicialize 'pagination' com uma estrutura segura
   const [pagination, setPagination] = useState({
     page: 1,
     per_page: 20,
@@ -46,27 +48,7 @@ export default function ConsultaSaldos() {
     has_prev: false
   })
 
-  // Debounced search function
-  const debouncedSearch = useCallback(
-    debounce((filtros) => {
-      buscarSaldos(filtros, 1)
-    }, 500),
-    []
-  )
-
-  useEffect(() => {
-    buscarSaldos()
-  }, [])
-
-  useEffect(() => {
-    if (Object.values(filtros).some(value => value.trim())) {
-      debouncedSearch(filtros)
-    } else {
-      buscarSaldos({}, 1)
-    }
-  }, [filtros, debouncedSearch])
-
-  const buscarSaldos = async (filtrosCustom = filtros, page = pagination.page) => {
+  const buscarSaldos = useCallback(async (filtrosCustom = filtros, page = 1) => {
     try {
       setLoading(true)
       setError(null)
@@ -77,22 +59,42 @@ export default function ConsultaSaldos() {
         ...filtrosCustom
       }
 
-      // Remove parâmetros vazios
       Object.keys(params).forEach(key => {
-        if (!params[key]) delete params[key]
+        if (!params[key] || params[key] === '') delete params[key]
       })
 
       const response = await apiClient.consultarSaldos(params)
       
-      setSaldos(response.data)
-      setPagination(response.pagination)
+      // A API pode não retornar a chave 'data' ou 'pagination' se não houver resultados
+      setSaldos(response.data || [])
+      if (response.pagination) {
+        setPagination(response.pagination)
+      } else {
+        // Reseta a paginação se não vier na resposta
+        setPagination({ page: 1, per_page: 20, total: 0, pages: 1, has_next: false, has_prev: false })
+      }
     } catch (err) {
-      setError(err.message)
+      setError(err.message || 'Erro desconhecido')
       setSaldos([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [pagination.per_page])
+
+  const debouncedSearch = useCallback(
+    debounce((filtros) => {
+      buscarSaldos(filtros, 1)
+    }, 500),
+    [buscarSaldos]
+  )
+
+  useEffect(() => {
+    buscarSaldos({}, 1)
+  }, [])
+
+  useEffect(() => {
+    debouncedSearch(filtros)
+  }, [filtros, debouncedSearch])
 
   const handleFiltroChange = (campo, valor) => {
     setFiltros(prev => ({
@@ -113,6 +115,10 @@ export default function ConsultaSaldos() {
     buscarSaldos(filtros, page)
   }
 
+  // O resto do seu JSX (a parte visual) pode permanecer o mesmo,
+  // pois as verificações de `loading`, `error` e `saldos.length === 0`
+  // já lidam com os diferentes estados.
+  
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -181,7 +187,7 @@ export default function ConsultaSaldos() {
               <Package className="h-5 w-5" />
               <span>Saldos Encontrados</span>
             </div>
-            {pagination.total > 0 && (
+            {pagination && pagination.total > 0 && (
               <Badge variant="secondary">
                 {pagination.total} resultado{pagination.total !== 1 ? 's' : ''}
               </Badge>
@@ -199,7 +205,7 @@ export default function ConsultaSaldos() {
               <AlertTriangle className="h-5 w-5 mr-2" />
               <span>Erro: {error}</span>
             </div>
-          ) : saldos.length === 0 ? (
+          ) : !saldos || saldos.length === 0 ? ( // Verificação mais segura
             <div className="flex items-center justify-center py-8 text-gray-500">
               <Package className="h-8 w-8 mr-2" />
               <span>Nenhum saldo encontrado</span>
@@ -213,25 +219,22 @@ export default function ConsultaSaldos() {
                       <TableHead>Cliente</TableHead>
                       <TableHead>Produto</TableHead>
                       <TableHead>Lote</TableHead>
-                      <TableHead className="text-right">Enviado</TableHead>
-                      <TableHead className="text-right">Retornado</TableHead>
-                      <TableHead className="text-right">Utilizado</TableHead>
                       <TableHead className="text-right">Saldo</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {saldos.map((saldo) => {
-                      const status = getSaldoStatus(saldo.saldo_disponivel)
+                      const status = getSaldoStatus(saldo.saldo)
                       return (
-                        <TableRow key={saldo.id}>
+                        <TableRow key={`${saldo.cliente_cnpj}-${saldo.codigo_produto}-${saldo.lote}`}>
                           <TableCell>
                             <div>
                               <div className="font-medium text-gray-900">
-                                {truncateText(saldo.cliente_nome, 30)}
+                                {truncateText(saldo.nome_cliente, 30)}
                               </div>
                               <div className="text-sm text-gray-500">
-                                {formatCNPJ(saldo.cliente_cnpj)}
+                                {formatCNPJ(saldo.cnpj_cliente)}
                               </div>
                             </div>
                           </TableCell>
@@ -247,20 +250,11 @@ export default function ConsultaSaldos() {
                           </TableCell>
                           <TableCell>
                             <span className="font-mono text-sm">
-                              {saldo.numero_lote}
+                              {saldo.lote}
                             </span>
                           </TableCell>
-                          <TableCell className="text-right">
-                            {formatNumber(saldo.quantidade_enviada)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatNumber(saldo.quantidade_retornada)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatNumber(saldo.quantidade_utilizada)}
-                          </TableCell>
                           <TableCell className="text-right font-medium">
-                            {formatNumber(saldo.saldo_disponivel)}
+                            {formatNumber(saldo.saldo)}
                           </TableCell>
                           <TableCell>
                             <Badge className={status.color}>
@@ -275,7 +269,7 @@ export default function ConsultaSaldos() {
               </div>
 
               {/* Paginação */}
-              {pagination.pages > 1 && (
+              {pagination && pagination.pages > 1 && (
                 <div className="flex items-center justify-between mt-4">
                   <div className="text-sm text-gray-500">
                     Página {pagination.page} de {pagination.pages}
@@ -309,4 +303,3 @@ export default function ConsultaSaldos() {
     </div>
   )
 }
-

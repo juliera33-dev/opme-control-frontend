@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,7 +19,6 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
-  Eye
 } from 'lucide-react'
 import { apiClient } from '@/lib/api'
 import { 
@@ -31,8 +30,8 @@ import {
 } from '@/lib/utils'
 
 export default function NotasFiscais() {
-  const [notas, setNotas] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [notas, setNotas] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [filtros, setFiltros] = useState({
     tipo_operacao: '',
@@ -42,47 +41,64 @@ export default function NotasFiscais() {
     page: 1,
     per_page: 20,
     total: 0,
-    pages: 0,
+    pages: 1,
     has_next: false,
     has_prev: false
   })
 
-  useEffect(() => {
-    buscarNotas()
-  }, [])
-
+  // =====================================================================
+  // FUNÇÃO DE BUSCA COM DEBUGGING
+  // =====================================================================
   const buscarNotas = async (filtrosCustom = filtros, page = pagination.page) => {
+    console.log("1. Função buscarNotas() foi chamada.");
     try {
-      setLoading(true)
-      setError(null)
+      setLoading(true);
+      setError(null);
+      console.log("2. Loading definido como true. Montando parâmetros...");
 
       const params = {
         page,
         per_page: pagination.per_page,
         ...filtrosCustom
-      }
+      };
+      console.log("3. Parâmetros montados:", params);
 
       // Remove parâmetros vazios
       Object.keys(params).forEach(key => {
-        if (!params[key]) delete params[key]
-      })
+        if (!params[key] || params[key] === '') delete params[key];
+      });
+      console.log("4. Parâmetros limpos:", params);
+      console.log("5. Prestes a chamar apiClient.getNotasFiscais...");
 
-      const response = await apiClient.getNotasFiscais(params)
-      
-      setNotas(response.data)
-      setPagination(response.pagination)
+      const response = await apiClient.getNotasFiscais(params);
+      console.log("6. Resposta da API recebida:", response);
+
+      setNotas(response.data || []);
+      if (response.pagination) {
+        setPagination(response.pagination);
+      } else {
+        setPagination({ page: 1, per_page: 20, total: 0, pages: 1, has_next: false, has_prev: false });
+      }
     } catch (err) {
-      setError(err.message)
-      setNotas([])
+      console.error("!!! ERRO DENTRO DO CATCH:", err);
+      setError(err.message);
+      setNotas([]);
     } finally {
-      setLoading(false)
+      console.log("7. Bloco finally executado. SetLoading para false.");
+      setLoading(false);
     }
-  }
+  };
+  // =====================================================================
 
+  useEffect(() => {
+    buscarNotas()
+  }, [])
+  
   const handleFiltroChange = (campo, valor) => {
+    const valorFinal = valor === 'todos' ? '' : valor;
     const novosFiltros = {
       ...filtros,
-      [campo]: valor
+      [campo]: valorFinal
     }
     setFiltros(novosFiltros)
     buscarNotas(novosFiltros, 1)
@@ -102,26 +118,20 @@ export default function NotasFiscais() {
   }
 
   const downloadXML = async (notaId, numeroNota) => {
-    try {
-      const response = await apiClient.getXMLNotaFiscal(notaId)
-      
-      // Cria um blob com o conteúdo XML
-      const blob = new Blob([response.data.xml_content], { type: 'application/xml' })
-      const url = window.URL.createObjectURL(blob)
-      
-      // Cria um link temporário para download
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `NF_${numeroNota}_${response.data.serie}.xml`
-      document.body.appendChild(link)
-      link.click()
-      
-      // Limpa o link temporário
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-    } catch (err) {
-      alert('Erro ao baixar XML: ' + err.message)
-    }
+     try {
+       const response = await apiClient.getXMLNotaFiscal(notaId)
+       const blob = new Blob([response.data.xml_content], { type: 'application/xml' })
+       const url = window.URL.createObjectURL(blob)
+       const link = document.createElement('a')
+       link.href = url
+       link.download = `NF_${numeroNota}_${response.data.serie}.xml`
+       document.body.appendChild(link)
+       link.click()
+       document.body.removeChild(link)
+       window.URL.revokeObjectURL(url)
+     } catch (err) {
+       alert('Erro ao baixar XML: ' + err.message)
+     }
   }
 
   return (
@@ -147,14 +157,14 @@ export default function NotasFiscais() {
                 Tipo de Operação
               </label>
               <Select 
-                value={filtros.tipo_operacao} 
+                value={filtros.tipo_operacao || 'todos'} 
                 onValueChange={(value) => handleFiltroChange('tipo_operacao', value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os tipos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos os tipos</SelectItem>
+                  <SelectItem value="todos">Todos os tipos</SelectItem>
                   <SelectItem value="saida">Saída para Consignação</SelectItem>
                   <SelectItem value="retorno">Retorno de Consignação</SelectItem>
                   <SelectItem value="simbolico">Retorno Simbólico</SelectItem>
@@ -184,35 +194,35 @@ export default function NotasFiscais() {
       {/* Lista de Notas */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <FileText className="h-5 w-5" />
-              <span>Notas Fiscais</span>
-            </div>
-            {pagination.total > 0 && (
-              <Badge variant="secondary">
-                {pagination.total} nota{pagination.total !== 1 ? 's' : ''}
-              </Badge>
-            )}
-          </CardTitle>
+            <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                    <FileText className="h-5 w-5" />
+                    <span>Notas Fiscais</span>
+                </div>
+                {pagination && pagination.total > 0 && (
+                    <Badge variant="secondary">
+                        {pagination.total} nota{pagination.total !== 1 ? 's' : ''}
+                    </Badge>
+                )}
+            </CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-2 text-gray-600">Carregando...</span>
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-center py-8 text-red-600">
-              <AlertTriangle className="h-5 w-5 mr-2" />
-              <span>Erro: {error}</span>
-            </div>
-          ) : notas.length === 0 ? (
-            <div className="flex items-center justify-center py-8 text-gray-500">
-              <FileText className="h-8 w-8 mr-2" />
-              <span>Nenhuma nota fiscal encontrada</span>
-            </div>
-          ) : (
+            {loading ? (
+                <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <span className="ml-2 text-gray-600">Carregando...</span>
+                </div>
+            ) : error ? (
+                <div className="flex items-center justify-center py-8 text-red-600">
+                    <AlertTriangle className="h-5 w-5 mr-2" />
+                    <span>Erro: {error}</span>
+                </div>
+            ) : !notas || notas.length === 0 ? (
+                <div className="flex items-center justify-center py-8 text-gray-500">
+                    <FileText className="h-8 w-8 mr-2" />
+                    <span>Nenhuma nota fiscal encontrada</span>
+                </div>
+            ) : (
             <>
               <div className="overflow-x-auto">
                 <Table>
@@ -236,7 +246,7 @@ export default function NotasFiscais() {
                               {nota.numero}/{nota.serie}
                             </div>
                             <div className="text-xs text-gray-500 font-mono">
-                              {nota.chave_acesso.substring(0, 8)}...
+                              {nota.chave_acesso ? `${nota.chave_acesso.substring(0, 8)}...` : 'N/A'}
                             </div>
                           </div>
                         </TableCell>
@@ -287,7 +297,7 @@ export default function NotasFiscais() {
               </div>
 
               {/* Paginação */}
-              {pagination.pages > 1 && (
+              {pagination && pagination.pages > 1 && (
                 <div className="flex items-center justify-between mt-4">
                   <div className="text-sm text-gray-500">
                     Página {pagination.page} de {pagination.pages}
@@ -321,4 +331,3 @@ export default function NotasFiscais() {
     </div>
   )
 }
-
